@@ -48,3 +48,103 @@ Runtime/
     ├── MessageHandler.cs
     ├── MessageHandlersHolder.cs
     └── MessageRegistry.cs
+```
+
+## 📝 Usage
+
+### 1. Define a Message
+Always use `struct` (or `readonly struct`) to ensure **zero allocation**.
+*Tip: Keep messages pure data (no logic).*
+
+```csharp
+public readonly struct PlayerLevelUpMessage : IMessage
+{
+    public readonly int NewLevel;
+    public readonly int GoldReward;
+
+    public PlayerLevelUpMessage(int newLevel, int goldReward)
+    {
+        NewLevel = newLevel;
+        GoldReward = goldReward;
+    }
+}
+```
+
+### 2. Publish (The Sender)
+Publishing is extremely fast and generates 0 garbage. You can call this from anywhere (Managers, Controllers, Triggers).
+
+```csharp
+// Example: Called inside a Game Manager or Logic Class
+Messenger.Publish(new PlayerLevelUpMessage(10, 500));
+```
+
+### 3. Subscribe (The Receiver)
+Returns an IDisposable. You must dispose of it when the object is destroyed to prevent memory leaks.
+
+```csharp
+using Runtime.Message;
+using UnityEngine;
+
+public class UIManager : MonoBehaviour
+{
+    private IDisposable _subscription;
+
+    void Start()
+    {
+        // Subscribe and store the token
+        _subscription = Messenger.Subscribe<PlayerLevelUpMessage>(OnLevelUp);
+    }
+
+    private void OnLevelUp(PlayerLevelUpMessage msg)
+    {
+        // Handle the event
+        Debug.Log($"Level Up! Level: {msg.NewLevel}, Gold: {msg.GoldReward}");
+    }
+
+    void OnDestroy()
+    {
+        // IMPORTANT: Always dispose to prevent memory leaks!
+        _subscription?.Dispose();
+    }
+}
+```
+
+## 💡 Best Practice: Handling Multiple Subscriptions
+If a class subscribes to multiple messages, use a List to manage them easily.
+
+```csharp
+private List<IDisposable> _disposables = new List<IDisposable>();
+
+void Start() 
+{
+    _disposables.Add(Messenger.Subscribe<PlayerLevelUpMessage>(OnLevelUp));
+    _disposables.Add(Messenger.Subscribe<GamePauseMessage>(OnPause));
+}
+
+void OnDestroy() 
+{
+    foreach (var d in _disposables) d.Dispose();
+    _disposables.Clear();
+}
+```
+
+## ⚡ Performance: List vs. FastMessage
+Why is FastMessage better than a standard List<Action>?
+
+| Feature | Standard `List<T>` | FastMessage (Cached Array) |
+| :--- | :--- | :--- |
+| **Iteration Speed** | Good | **Best** (Array is faster than List) |
+| **Memory Alloc (Publish)** | Zero | **Zero** |
+| **Modification Safety** | ❌ **Crash** (InvalidOperationException) if modified during loop | ✅ **Safe** (Snapshot isolation) |
+| **Thread Safety** | ❌ No | ✅ **Yes** (Snapshot isolation) |
+
+The "Snapshot" Logic
+When you call Publish, FastMessage iterates over a cached array. If a listener unsubscribes during the loop, it modifies the underlying list but not the array currently being iterated. The cache is only rebuilt (lazily) when the next modification happens.
+
+## ❤️ Acknowledgement
+Thank for #TweakKit
+Dedicated to my former colleague who laid the foundation for this system.
+Tri ân người anh đồng nghiệp cũ đã tạo ra phiên bản đầu tiên, đặt nền móng cho sự phát triển của thư viện này.
+
+## 📄 License
+This project is free to use. No license is required. Author: thanhthai18
